@@ -34,6 +34,7 @@
         <a href="#login" id="navLogin">로그인</a>
         <a href="#signup" id="navSignup">회원가입</a>
         <a href="#mypage" id="navMypage" hidden>마이페이지</a>
+        <a href="#admin" id="navAdmin" hidden>관리자</a>
         <button type="button" id="logoutBtn" class="text-btn" hidden>로그아웃</button>
         <a href="#cart" class="cart-link">장바구니 <span id="cartCount" class="badge">0</span></a>
       </div>
@@ -50,6 +51,11 @@
       </ul>
     </nav>
   </header>
+
+  <!-- Supabase 공개 키를 아직 안 넣었을 때만 보이는 안내 -->
+  <div id="configBanner" class="config-banner" hidden>
+    쇼핑몰 설정이 아직 끝나지 않았어요. <b>script.js</b> 맨 위에 Supabase 공개 키를 넣어 주세요.
+  </div>
 
   <!-- ===== 본문 ===== -->
   <main id="main">
@@ -196,6 +202,15 @@
     <!-- 마이페이지 -->
     <section id="page-mypage" class="page" hidden>
       <div class="container" id="mypageBox"></div>
+    </section>
+
+    <!-- 관리자 (회원 관리 · 상품 관리 · 주문 관리) -->
+    <section id="page-admin" class="page" hidden>
+      <div class="container">
+        <h2 class="page-title">관리자</h2>
+        <nav class="tabs" id="adminTabs" aria-label="관리 메뉴"></nav>
+        <div id="adminBox"></div>
+      </div>
     </section>
 
   </main>
