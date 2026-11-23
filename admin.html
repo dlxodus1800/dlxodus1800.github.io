@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex">
+  <title>관리자 | KEYDECK</title>
+  <link rel="icon" type="image/svg+xml" href="img/favicon.svg">
+  <link rel="stylesheet" href="style.css">
+  <style>
+    /* 관리자 화면 전용 (헤더의 오른쪽 링크는 모바일에서도 보이게) */
+    .admin-bar { display: flex; align-items: center; gap: 16px; margin-left: auto; font-size: 14px; white-space: nowrap; }
+    .admin-bar a:hover { text-decoration: underline; }
+    .admin-filters { display: flex; gap: 8px; flex: 1; flex-wrap: wrap; }
+    .admin-filters select { padding: 9px 12px; border: 1px solid var(--gray-3); border-radius: var(--radius); background: var(--white); }
+    .summary-note { margin: -16px 0 24px; font-size: 13px; color: var(--gray-4); }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="index.html" class="logo">KEYDECK</a>
+      <div class="admin-bar">
+        <a href="index.html">쇼핑몰로</a>
+        <button type="button" id="logoutBtn" class="text-btn" hidden>로그아웃</button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <div class="container">
+      <h2 class="page-title">관리자</h2>
+      <p id="gate" class="loading">확인하는 중…</p>
+
+      <div id="adminApp" hidden>
+        <div class="my-top" id="summary"></div>
+        <p class="summary-note">주문 합계는 취소된 주문을 뺀 금액이에요.</p>
+
+        <nav class="tabs" aria-label="관리 메뉴">
+          <a href="#members" class="tab" data-tab="members">회원 관리</a>
+          <a href="#orders" class="tab" data-tab="orders">주문 관리</a>
+        </nav>
+        <div id="tabMembers"></div>
+        <div id="tabOrders" hidden></div>
+      </div>
+    </div>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="db.js"></script>
+  <script>
+    /* =========================================================
+       KEYDECK 관리자 (회원 목록 · 등급/포인트/역할 수정 · 주문 상태 · 요약 숫자)
+       ※ 진짜 문지기는 DB 의 보안 규칙(RLS)과 shop_admin_update_member 함수다.
+         이 화면의 role 확인은 안내일 뿐이다.
+       ========================================================= */
+    const GRADE_NAMES = ["WELCOME", "SILVER", "GOLD", "VIP"];
+    const ORDER_STATUS = ["결제완료", "배송중", "배송완료", "취소"];
+    const SCROLL_HINT = '<p class="scroll-hint">표를 옆으로 밀면 더 보여요 →</p>';
+
+    const $ = (sel) => document.querySelector(sel);
+    const won = (n) => Number(n || 0).toLocaleString("ko-KR") + "원";
+    const escapeHtml = (str) => String(str ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    const dateText = (iso) => (iso ? new Date(iso).toLocaleString("ko-KR") : "");
+    function orderNo(o) {
+      const d = new Date(o.created_at);
+      return "KD" + d.getFullYear() + String(d.getMonth() + 1).padStart(2, "0") + String(d.getDate()).padStart(2, "0") + "-" + String(o.id).padStart(4, "0");
+    }
+    let toastTimer;
+    function toast(msg, ms = 2400) {
+      const el = $("#toast");
+      el.textContent = msg;
+      el.classList.add("show");
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => el.classList.remove("show"), ms);
+    }
+    function errText(e) {
+      const m = String((e && e.message) || "");
+      if (/invalid api key/i.test(m)) return "Supabase 공개 키가 올바르지 않아요. db.js 를 확인해 주세요.";
+      if (/failed to fetch|networkerror|load failed/i.test(m)) return "서버에 연결할 수 없어요.";
+      if (/jwt expired/i.test(m)) return "로그인이 만료됐어요. 쇼핑몰에서 다시 로그인해 주세요.";
+      if (e && (e.code === "42501" || e.status === 403)) return "권한이 없어요.";
+      return m || "알 수 없는 오류가 났어요.";
+    }
+
+    let me = null, members = [], orders = [], itemsMap = {}, nameOf = {};
+
+    // 관리자가 아니면 index.html 로 돌려보낸다
+    function deny(msg) {
+      $("#gate").textContent = msg;
+      setTimeout(() => location.replace("index.html"), 1500);
+    }
+
+    async function start() {
+      if (typeof SUPABASE_KEY !== "string" || SUPABASE_KEY.includes("붙여넣기")) {
+        $("#gate").textContent = "db.js 맨 위에 Supabase 공개 키를 넣어 주세요.";
+        return;
+      }
+      const { data: sess } = await db.auth.getSession();
+      if (!sess.session) return deny("로그인이 필요해요. 쇼핑몰로 돌아가요.");
+      const { data: p, error } = await db.from("shop_profiles").select("*").eq("id", sess.session.user.id).maybeSingle();
+      if (error || !p || p.role !== "admin") return deny("관리자만 들어갈 수 있어요. 쇼핑몰로 돌아가요.");
+      me = p;
+
+      $("#logoutBtn").hidden = false;
+      $("#logoutBtn").addEventListener("click", async () => { await db.auth.signOut(); location.replace("index.html"); });
+
+      try { await loadAll(); }
+      catch (e) { $("#gate").textContent = "불러오지 못했어요. " + errText(e); return; }
+      $("#gate").hidden = true;
+      $("#adminApp").hidden = false;
+      renderSummary();
+      renderMembers();
+      renderOrders();
+      window.addEventListener("hashchange", showTab);
+      showTab();
+    }
+
+    async function loadAll() {
+      const [m, o, pr] = await Promise.all([
+        db.from("shop_profiles").select("*").order("created_at"),
+        db.from("shop_orders").select("*").order("id", { ascending: false }),
+        db.from("shop_products").select("id,name")
+      ]);
+      for (const r of [m, o, pr]) if (r.error) throw r.error;
+      members = m.data; orders = o.data;
+      nameOf = {}; pr.data.forEach((p) => { nameOf[p.id] = p.name; });
+      itemsMap = {};
+      if (orders.length) {
+        const it = await db.from("shop_order_items").select("*").in("order_id", orders.map((x) => x.id));
+        if (it.error) throw it.error;
+        it.data.forEach((i) => { (itemsMap[i.order_id] = itemsMap[i.order_id] || []).push(i); });
+      }
+    }
+
+    function showTab() {
+      const tab = location.hash === "#orders" ? "orders" : "members";
+      $("#tabMembers").hidden = tab !== "members";
+      $("#tabOrders").hidden = tab !== "orders";
+      document.querySelectorAll(".tabs .tab").forEach((a) => a.classList.toggle("active", a.dataset.tab === tab));
+    }
+
+    /* ----- 요약 숫자 ----- */
+    function renderSummary() {
+      const sum = orders.filter((o) => o.status !== "취소").reduce((s, o) => s + o.total, 0);
+      $("#summary").innerHTML = `
+        <div class="my-card dark"><p class="label">회원 수</p><p class="value">${members.length}명</p></div>
+        <div class="my-card"><p class="label">주문 건수</p><p class="value">${orders.length}건</p></div>
+        <div class="my-card"><p class="label">주문 합계</p><p class="value">${won(sum)}</p></div>`;
+    }
+
+    /* ----- 회원 관리 ----- */
+    function renderMembers() {
+      const box = $("#tabMembers");
+      box.innerHTML = `
+        <div class="admin-top">
+          <div class="admin-filters">
+            <input type="search" id="memberFilter" placeholder="이름 검색" aria-label="이름 검색">
+            <select id="gradeFilter" aria-label="등급 필터">
+              <option value="">모든 등급</option>
+              ${GRADE_NAMES.map((g) => `<option>${g}</option>`).join("")}
+            </select>
+          </div>
+          <span class="result-info" id="memberCount">회원 ${members.length}명</span>
+        </div>
+        ${SCROLL_HINT}<div class="table-wrap">
+          <table class="admin-table" id="memberTable">
+            <thead><tr><th>이름</th><th>이메일</th><th>연락처</th><th>등급</th><th>포인트</th><th>역할</th><th>가입일</th><th></th></tr></thead>
+            <tbody>
+              ${members.map((m) => `
+                <tr data-id="${m.id}" data-name="${escapeHtml((m.name || "").toLowerCase())}" data-grade="${m.grade}">
+                  <td>${escapeHtml(m.name)}</td>
+                  <td>${escapeHtml(m.email)}</td>
+                  <td>${escapeHtml(m.phone)}</td>
+                  <td><select data-f="grade">${GRADE_NAMES.map((g) => `<option ${g === m.grade ? "selected" : ""}>${g}</option>`).join("")}</select></td>
+                  <td><input type="number" data-f="points" min="0" step="100" value="${m.points}"></td>
+                  <td>${m.id === me.id
+                    ? `<span title="본인 계정의 역할은 바꿀 수 없어요">${m.role}</span><input type="hidden" data-f="role" value="${m.role}">`
+                    : `<select data-f="role"><option ${m.role === "member" ? "selected" : ""}>member</option><option ${m.role === "admin" ? "selected" : ""}>admin</option></select>`}</td>
+                  <td>${new Date(m.created_at).toLocaleDateString("ko-KR")}</td>
+                  <td><button type="button" class="btn btn-sm" data-save-member>저장</button></td>
+                </tr>`).join("")}
+            </tbody>
+          </table>
+        </div>`;
+
+      const filter = () => {
+        const q = $("#memberFilter").value.trim().toLowerCase();
+        const g = $("#gradeFilter").value;
+        let n = 0;
+        box.querySelectorAll("#memberTable tbody tr").forEach((tr) => {
+          const show = (!q || tr.dataset.name.includes(q)) && (!g || tr.dataset.grade === g);
+          tr.hidden = !show;
+          if (show) n++;
+        });
+        $("#memberCount").textContent = `회원 ${n}명`;
+      };
+      $("#memberFilter").addEventListener("input", filter);
+      $("#gradeFilter").addEventListener("change", filter);
+
+      box.querySelectorAll("[data-save-member]").forEach((b) =>
+        b.addEventListener("click", async () => {
+          const tr = b.closest("tr");
+          const points = Number(tr.querySelector('[data-f="points"]').value);
+          if (!Number.isInteger(points) || points < 0) return toast("포인트는 0 이상의 정수로 입력해 주세요.");
+          b.disabled = true;
+          const { error } = await db.rpc("shop_admin_update_member", {
+            p_user_id: tr.dataset.id,
+            p_grade: tr.querySelector('[data-f="grade"]').value,
+            p_points: points,
+            p_role: tr.querySelector('[data-f="role"]').value
+          });
+          b.disabled = false;
+          if (error) return toast(errText(error));
+          tr.dataset.grade = tr.querySelector('[data-f="grade"]').value;   // 등급 필터가 바뀐 값을 따르게
+          toast("회원 정보를 저장했어요.");
+        }));
+    }
+
+    /* ----- 주문 관리 ----- */
+    function renderOrders() {
+      const who = {}; members.forEach((m) => { who[m.id] = m; });
+      const box = $("#tabOrders");
+      box.innerHTML = orders.length ? `
+        ${SCROLL_HINT}<div class="table-wrap">
+          <table class="admin-table">
+            <thead><tr><th>주문번호</th><th>일시</th><th>회원</th><th>상품</th><th>결제 금액</th><th>상태</th><th></th></tr></thead>
+            <tbody>
+              ${orders.map((o) => {
+                const m = who[o.user_id];
+                return `
+                <tr data-id="${o.id}">
+                  <td>${orderNo(o)}</td>
+                  <td>${dateText(o.created_at)}</td>
+                  <td>${m ? escapeHtml(m.name) + "<br><small>" + escapeHtml(m.email) + "</small>" : ""}</td>
+                  <td>${(itemsMap[o.id] || []).map((i) => escapeHtml(nameOf[i.product_id] || "상품 " + i.product_id) + " × " + i.qty).join("<br>")}</td>
+                  <td>${won(o.total)}</td>
+                  <td><select data-f="status">${ORDER_STATUS.map((s) => `<option ${s === o.status ? "selected" : ""}>${s}</option>`).join("")}</select></td>
+                  <td><button type="button" class="btn btn-sm" data-save-order>저장</button></td>
+                </tr>`;
+              }).join("")}
+            </tbody>
+          </table>
+        </div>` : `<p class="empty">아직 주문이 없어요.</p>`;
+
+      box.querySelectorAll("[data-save-order]").forEach((b) =>
+        b.addEventListener("click", async () => {
+          const tr = b.closest("tr");
+          const status = tr.querySelector('[data-f="status"]').value;
+          b.disabled = true;
+          const { data, error } = await db.from("shop_orders").update({ status }).eq("id", Number(tr.dataset.id)).select();
+          b.disabled = false;
+          if (error) return toast(errText(error));
+          if (!data || !data.length) return toast("저장되지 않았어요. 관리자 계정인지 확인해 주세요.");
+          const o = orders.find((x) => x.id === Number(tr.dataset.id)); if (o) o.status = status;
+          renderSummary();
+          toast("주문 상태를 저장했어요.");
+        }));
+    }
+
+    start();
+  </script>
+</body>
+</html>
