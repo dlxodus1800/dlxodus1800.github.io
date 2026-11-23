@@ -34,7 +34,7 @@
         <a href="#login" id="navLogin">로그인</a>
         <a href="#signup" id="navSignup">회원가입</a>
         <a href="#mypage" id="navMypage" hidden>마이페이지</a>
-        <a href="#admin" id="navAdmin" hidden>관리자</a>
+        <a href="admin.html" id="navAdmin" hidden>관리</a>
         <button type="button" id="logoutBtn" class="text-btn" hidden>로그아웃</button>
         <a href="#cart" class="cart-link">장바구니 <span id="cartCount" class="badge">0</span></a>
       </div>
@@ -54,7 +54,7 @@
 
   <!-- Supabase 공개 키를 아직 안 넣었을 때만 보이는 안내 -->
   <div id="configBanner" class="config-banner" hidden>
-    쇼핑몰 설정이 아직 끝나지 않았어요. <b>script.js</b> 맨 위에 Supabase 공개 키를 넣어 주세요.
+    쇼핑몰 설정이 아직 끝나지 않았어요. <b>db.js</b> 맨 위에 Supabase 공개 키를 넣어 주세요.
   </div>
 
   <!-- ===== 본문 ===== -->
@@ -136,18 +136,7 @@
         <p class="notice">이 결제는 체험용입니다. 실제 결제는 이루어지지 않고 주문 내역만 저장돼요.</p>
         <div class="checkout-layout">
           <form id="checkoutForm" class="form-box" novalidate>
-            <h3>배송 정보</h3>
-            <label>받는 분<input type="text" id="coName" required></label>
-            <label>연락처<input type="tel" id="coPhone" placeholder="010-0000-0000" required></label>
-            <label>주소<input type="text" id="coAddr" required></label>
-            <label>배송 메모<input type="text" id="coMemo" placeholder="예) 문 앞에 놓아주세요"></label>
-
-            <h3>포인트 사용</h3>
-            <div class="point-use">
-              <input type="number" id="coPoint" min="0" step="100" value="0" aria-label="사용할 포인트">
-              <button type="button" id="usePointAll" class="btn btn-line btn-sm">전액 사용</button>
-            </div>
-            <p class="hint" id="coPointHint"></p>
+            <p class="hint">체험 결제라 배송 정보와 카드 정보는 받지 않아요. 주문 내역만 저장돼요.</p>
 
             <h3>결제 수단 (체험)</h3>
             <div class="pay-methods">
@@ -189,7 +178,7 @@
         <form id="signupForm" class="form-box" novalidate>
           <label>이름<input type="text" id="suName" required></label>
           <label>이메일<input type="email" id="suEmail" autocomplete="username" required></label>
-          <label>비밀번호 (8자 이상)<input type="password" id="suPw" autocomplete="new-password" minlength="8" required></label>
+          <label>비밀번호 (6자 이상)<input type="password" id="suPw" autocomplete="new-password" minlength="6" required></label>
           <label>비밀번호 확인<input type="password" id="suPw2" autocomplete="new-password" required></label>
           <label>연락처<input type="tel" id="suPhone" placeholder="010-0000-0000" required></label>
           <label class="check"><input type="checkbox" id="suAgree"> 이용약관 및 개인정보 수집에 동의합니다.</label>
@@ -204,15 +193,6 @@
       <div class="container" id="mypageBox"></div>
     </section>
 
-    <!-- 관리자 (회원 관리 · 상품 관리 · 주문 관리) -->
-    <section id="page-admin" class="page" hidden>
-      <div class="container">
-        <h2 class="page-title">관리자</h2>
-        <nav class="tabs" id="adminTabs" aria-label="관리 메뉴"></nav>
-        <div id="adminBox"></div>
-      </div>
-    </section>
-
   </main>
 
   <!-- ===== 푸터 ===== -->
@@ -225,7 +205,6 @@
       <div>
         <p class="footer-title">고객센터</p>
         <p>평일 10:00 - 17:00 (점심 12:00 - 13:00)</p>
-        <p>5만 원 이상 구매 시 무료배송</p>
       </div>
       <div>
         <p class="footer-title">안내</p>
@@ -237,6 +216,8 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="db.js"></script>
   <script src="script.js"></script>
 </body>
 </html>
